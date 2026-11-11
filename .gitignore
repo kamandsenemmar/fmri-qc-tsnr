@@ -1,0 +1,6 @@
+.venv/
+data/
+outputs/
+*.nii
+*.nii.gz
+__pycache__/
