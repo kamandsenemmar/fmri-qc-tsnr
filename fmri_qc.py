@@ -17,8 +17,9 @@ def load_4d(path):
     return image, TR
 
 def discard_volumes(data, n=5):
-    trimmed_data = data[:, :, :, n:]
-    return trimmed_data
+    if n < 0 or n > data.shape[3] - 2:
+        raise ValueError(f"--discard must be between 0 and {data.shape[3] - 2}")
+    return data[:, :, :, n:]
 
 def make_mask(img):
     mask_img = compute_epi_mask(img)
@@ -40,14 +41,14 @@ def summarize(tsnr, mask, n_volume, tr):
     ninetyfive_percentile = np.percentile(masked_tsnr, 95)
     voxels_masked = np.sum(boolean_mask)
     summary = {
-        "mean_tsnr": float(mean_masked_tsnr),
-        "median_tsnr": float(median_masked_tsnr),
-        "std_tsnr": float(std_masked_tsnr),
-        "5th percentile": float(five_percentile),
-        "95th percentile": float(ninetyfive_percentile),
-        "number of voxels inside the mask": int(voxels_masked),
-        "Number of volumes remaining after discarding": int(n_volume),
-        "TR": float(tr)
+        "tsnr_mean": float(mean_masked_tsnr),
+        "tsnr_median": float(median_masked_tsnr),
+        "tsnr_std": float(std_masked_tsnr),
+        "tsnr_p5": float(five_percentile),
+        "tsnr_p95": float(ninetyfive_percentile),
+        "mask_voxel_count": int(voxels_masked),
+        "n-volumes": int(n_volume),
+        "tr_seconds": float(tr)
     }
     return summary
 
@@ -56,18 +57,22 @@ def make_figure(tsnr, mask_img, data, output_path):
     masked_data = mask_img.get_fdata()
     boolean_masked = masked_data.astype(bool)
     masked_tsnr = tsnr[boolean_masked]
-    fig, axes = plt.subplots(2, 3, figsize=(12, 8))
+    vmax = np.percentile(masked_tsnr, 99)
+    mean_tsnr = np.mean(masked_tsnr)
+    median_tsnr = np.median(masked_tsnr)
+    voxel_count = np.sum(boolean_masked)
+    fig, axes = plt.subplots(2, 3, figsize=(14, 8))
     n_slices = tsnr.shape[2]
     slice_indices = [
         int(n_slices * 0.25),
         int(n_slices * 0.50),
         int(n_slices * 0.75)
     ]
-    axes[0, 0].imshow(tsnr[:, :, slice_indices[0]].T, cmap="gray", origin="lower")
+    im = axes[0, 0].imshow(tsnr[:, :, slice_indices[0]].T, cmap="gray", origin="lower", vmin=0, vmax=vmax)
     axes[0, 0].set_title(f"tSNR - Axial slice {slice_indices[0]}")
-    axes[0, 1].imshow(tsnr[:, :, slice_indices[1]].T, cmap="gray", origin="lower")
+    axes[0, 1].imshow(tsnr[:, :, slice_indices[1]].T, cmap="gray", origin="lower", vmin=0, vmax=vmax)
     axes[0, 1].set_title(f"tSNR - Axial slice {slice_indices[1]}")
-    axes[0, 2].imshow(tsnr[:, :, slice_indices[2]].T, cmap="gray", origin="lower")
+    axes[0, 2].imshow(tsnr[:, :, slice_indices[2]].T, cmap="gray", origin="lower", vmin=0, vmax=vmax)
     axes[0, 2].set_title(f"tSNR - Axial slice {slice_indices[2]}")
     axes[1, 0].imshow(mean_img[:, :, slice_indices[1]].T, cmap="gray", origin="lower")
     axes[1, 0].contour(
@@ -76,13 +81,22 @@ def make_figure(tsnr, mask_img, data, output_path):
         colors="red",
         linewidths=1
     )
-    axes[1, 0].set_title(f"Mask overlay on mean fMRI - Axial slice {slice_indices[1]}")
+    axes[1, 0].set_title(f"Mean fMRI + Mask - Axial slice {slice_indices[1]}")
     axes[1, 1].hist(masked_tsnr, bins=50)
     axes[1, 1].set_title("Distribution of tSNR within the mask")
     axes[1, 1].set_xlabel("tSNR")
     axes[1, 1].set_ylabel("Number of voxels")
     axes[1, 2].axis("off")
-    plt.tight_layout()
+    axes[1, 2].text(
+        0.1, 0.8,
+        f"Mean tSNR: {mean_tsnr: .2f}\n"
+        f"Median tSNR: {median_tsnr: .2f}\n"
+        f"Voxels within the mask: {voxel_count}",
+        transform=axes[1, 2].transAxes
+    )
+    fig.tight_layout(rect=[0.02, 0.02, 0.96, 0.98], w_pad=2)
+    cbar_ax = fig.add_axes([0.94, 0.58, 0.012, 0.328])
+    fig.colorbar(im, cax=cbar_ax, label="tSNR")
     plt.savefig(output_path, dpi=150)
     plt.close(fig)
 
@@ -107,7 +121,6 @@ def main():
     with open(output_dir / "qc_summary.json", "w") as f:
         json.dump(summary, f, indent=4)
     make_figure(tsnr_map, mask_img, trimmed_data, output_dir / "qc_report.png")
-    #print("Number of NaNs: ", np.isnan(tsnr_map).sum())
 
 if __name__ == "__main__":
     main()

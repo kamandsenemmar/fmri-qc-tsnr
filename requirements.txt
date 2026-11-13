@@ -1,4 +1,4 @@
-numpy
-nibabel
-nilearn
-matplotlib
+numpy==2.5.4
+nibabel==5.5.0
+nilearn==0.14.1
+matplotlib==3.11.2
